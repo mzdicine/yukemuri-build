@@ -25,6 +25,7 @@ const CFG_DEFAULT = {
   textSpeed: DEFAULTS.textSpeed, autoWait: DEFAULTS.autoWait, autoPerChar: DEFAULTS.autoPerChar,
   skipUnread: false, tbOpacity: 0.85, dangerFx: 'normal', voiceStop: true, interj: true, interjH: true,
   hfx: true, // 「H 特效」开关（STAGING §12.3）
+  dangerTimer: true, // N-dz1「危险选项倒计时」：关掉后限时选项不计时、不超时
   portraitDim: PRIVACY_BRIGHTNESS, // 「竖屏亮度」0.1–1（UI_SPEC §13.7），写入 --portrait-dim
 };
 const cfg = Object.assign(structuredClone(CFG_DEFAULT), store.get('cfg', {}));
@@ -183,7 +184,7 @@ class Audio_ {
     }
     return this.buf.get(key);
   }
-  _start(id, dest, { loop = false, vol = 1, fade = 0, rate = 1 } = {}) {
+  _start(id, dest, { loop = false, vol = 1, fade = 0, rate = 1, offset = 0 } = {}) {
     const ent = { id, src: null, gain: this.ctx.createGain(), stopped: false, dur: 0 };
     ent.gain.connect(dest);
     const t = this.ctx.currentTime;
@@ -195,7 +196,7 @@ class Audio_ {
         s.loop = true; const m = this.meta(id);
         if (m && m.loopLength > 0 && m.sr) { s.loopStart = m.loopStart / m.sr; s.loopEnd = (m.loopStart + m.loopLength) / m.sr; }
       }
-      s.connect(ent.gain); s.start(); ent.src = s; ent.dur = b.duration / rate;
+      s.connect(ent.gain); s.start(0, offset > 0 && offset < b.duration ? offset : 0); ent.src = s; ent.dur = b.duration / rate;
       return ent.dur;
     });
     return ent;
@@ -360,6 +361,9 @@ const view = {
     audio.setHeartRate(lv.bpm / 60);
     if (on && rising && lv.shake && !weak) this.shake(lv.shake);
     if (on && rising && v >= 100) audio.holdBreath(DEFAULTS.danger.holdBreathMs);
+    // N-dz1：随机事件 / 只回想块里显示「外面怎么了」的提示（按事件类型取 defaults.danger.labels）
+    const lb = $('#danger-label');
+    if (lb) { const t = on && (st.dz?.ev || st.dz?.special) ? (DEFAULTS.danger.labels[st.danger.kind] || DEFAULTS.danger.labels.head || '') : ''; lb.textContent = t; lb.classList.toggle('on', !!t); }
   },
   shake(level = 's', dur, dir = 'xy') {
     if (this.fast) return;
@@ -479,7 +483,13 @@ const vm = new VM(P, {
       if (s.kind === 'voice') return; // 台词语音在 showText 里播（便于自动模式等待）
       audio.once(s.id, s.id.startsWith('amb_') ? 'amb' : 'se', s.vol ?? 1);
     },
-    gauge: (k, o, n, silent, m) => { if (k !== 'danger') hud.set(k, n, !silent && !view.fast); },
+    gauge: (k, o, n, silent, m, info) => {
+      if (k !== 'danger') return hud.set(k, n, !silent && !view.fast);
+      // N-dz1：按句 / 按秒 / 事件收尾的涨落只刷新计量，不播上升音、不震屏（事件登场和选项走 cmd → applyDanger）
+      if (info && (info.reason === 'line' || info.reason === 'sec' || info.reason === 'end')) view.applyDanger(m.st, false);
+    },
+    // N-dz1 满格化解：屏住呼吸 + 「今晚先到这里吧」；计量由引擎收起（化解音引擎只发一次）
+    defuse: (d) => { ctl.stopTimer(); if (audio.breath !== 0) audio.holdBreath(DEFAULTS.danger.holdBreathMs); toast(d.text || DEFAULTS.danger.defuseText); },
     threshold: (k, t, m) => { if (!m.st.recall) { const v = P.vars[k]; toast(`${P.chars[v.chara]?.name || ''}${v.label} 达到 ${t}`); audio.once(DEFAULTS.unlockSe); } },
     unlock: (kind, id) => { saveSys(); if (kind === 'recall') toast(`回想解锁：${P.hblocks[id]?.title || id}`); },
     chose: (opt) => backlog.push({ choice: true, text: opt.text }),
@@ -726,16 +736,69 @@ const ctl = {
     }
   },
   showChoice(ev) {
+    const wasSkip = this.skip;
     if (this.skip) this.setSkip(false);
+    if (this.timer && this.timer.ev !== ev) this.stopTimer();
     autosave();
     const box = $('#choices'); box.replaceChildren(); box.className = `on${ev.hstyle ? '' : ' dim'}`;
     const R = choiceRects(L, ev.opts.length, ev.hstyle);
     ev.opts.forEach((o, k) => {
       const b = el('button', `choice${ev.hstyle ? ' h' : ''}${o.seen ? ' seen' : ''}`, o.text);
       if (!L.portrait) Object.assign(b.style, { left: `${R[k].x}px`, top: `${R[k].y}px`, width: `${R[k].w}px`, height: `${R[k].h}px` });
-      b.onclick = (e) => { e.stopPropagation(); audio.ui('confirm'); box.className = ''; box.replaceChildren(); this.handle(vm.choose(o.i)); };
+      if (o.hush) b.classList.add('choice-hush');
+      if (ev.timeout && o.i === ev.default) b.classList.add('choice-default');
+      b.onclick = (e) => { e.stopPropagation(); if (this.timer?.locked) return; this.stopTimer(); audio.ui('confirm'); box.className = ''; box.replaceChildren(); this.handle(vm.choose(o.i)); };
       box.append(b);
     });
+    // N-dz1 限时选项：计时在 UI（VM 不碰真实时间）。重排版重画按钮时沿用同一个计时器；读档 = 新事件，从满格重新开始
+    if (ev.timeout && cfg.dangerTimer && !wasSkip) { if (!this.timer) this.startTimer(ev); else this.drawTimer(); }
+  },
+  // ---- N-dz1 危险选项倒计时 ----
+  timer: null,
+  startTimer(ev) {
+    const T = { ev, total: ev.timeout, el: 0, last: performance.now(), ticks: 0, locked: false, raf: 0, se: null, seAt: 0, seOff: 0, paused: false };
+    this.timer = T;
+    const bar = el('div', 'danger-timer'); bar.id = 'danger-timer';
+    const fill = el('div', 'fill'); bar.append(fill);
+    if (skin('ui_timer_bar_bg')) bar.classList.add('skinned');
+    $('#choices').append(bar);
+    this._tickSe(true);
+    const step = (now) => {
+      if (this.timer !== T) return;
+      const pause = !!screens.open || document.hidden || this.ev !== ev;
+      if (pause !== T.paused) { T.paused = pause; this._tickSe(!pause); }
+      if (!pause && !T.locked) T.el += now - T.last;
+      T.last = now;
+      const secs = Math.floor(T.el / 1000), N = DEFAULTS.danger.secMax;
+      while (T.ticks < Math.min(secs, N)) { T.ticks++; vm.dangerTick('sec'); }
+      this.drawTimer();
+      if (T.el >= T.total && !T.locked) {
+        // 超时：高亮默认项 300ms（期间锁输入），然后自动选
+        T.locked = true; this._tickSe(false, true);
+        const db = $('#choices .choice-default'); if (db) db.classList.add('timeout');
+        setTimeout(() => { if (this.timer !== T) return; this.stopTimer(); const box = $('#choices'); box.className = ''; box.replaceChildren(); try { this.handle(vm.choose(ev.default)); } catch (e) { this.crash(e); } }, DEFAULTS.danger.timer.highlightMs);
+        return;
+      }
+      T.raf = requestAnimationFrame(step);
+    };
+    T.raf = requestAnimationFrame(step);
+  },
+  drawTimer() {
+    const T = this.timer; if (!T) return;
+    let bar = $('#danger-timer');
+    if (!bar) { bar = el('div', 'danger-timer'); bar.id = 'danger-timer'; bar.append(el('div', 'fill')); if (skin('ui_timer_bar_bg')) bar.classList.add('skinned'); $('#choices').append(bar); }
+    $('.fill', bar).style.width = `${Math.max(0, 1 - T.el / T.total) * 100}%`;
+  },
+  _tickSe(play, end = false) {
+    const T = this.timer; if (!T || !audio.ctx) return;
+    const id = DEFAULTS.danger.timer.tickSe;
+    if (play && !T.se && !end) { T.se = audio._start(id, audio.g.se, { offset: T.seOff }); T.seAt = audio.ctx.currentTime - T.seOff; }
+    else if (!play && T.se) { T.seOff = end ? 0 : audio.ctx.currentTime - T.seAt; audio._stop(T.se); T.se = null; }
+  },
+  stopTimer() {
+    const T = this.timer; if (!T) return;
+    cancelAnimationFrame(T.raf); this._tickSe(false, true); this.timer = null;
+    $('#danger-timer')?.remove();
   },
   next() {
     if (screens.open || !this.ev) return;
@@ -757,12 +820,14 @@ const ctl = {
   },
   crash(e) { console.error(e); toast(`脚本错误：${e.message}`); },
   start(fn) {
+    this.stopTimer();
     this.mode = 'game'; screens.closeAll(); view.clear(); backlog.length = 0; audio.stopInterj(); audio.stopVoice(); hud.build(); hud.hideAll();
     $('#text .body').textContent = ''; $('#namebox').classList.remove('on'); $('#choices').className = '';
     this.userHide = false; this.setAuto(false); this.setSkip(false);
     try { const ev = fn(); view.full(vm.st); this.handle(ev); } catch (e) { this.crash(e); }
   },
   toTitle() {
+    this.stopTimer();
     this.setAuto(false); this.setSkip(false); audio.stopVoice();
     vm.toTitle(); saveSys(); this.ev = null; this.mode = 'title'; view.clear();
     screens.title();
@@ -964,6 +1029,7 @@ const screens = {
     toggle('H 场景语气词', [[true, '开'], [false, '关']], () => cfg.interjH, (v) => (cfg.interjH = v));
     if (!NOVOICE) toggle('翻页停止语音', [[true, '是'], [false, '否']], () => cfg.voiceStop, (v) => (cfg.voiceStop = v));
     toggle('危险演出', [['normal', '标准'], ['weak', '减弱（不震屏）']], () => cfg.dangerFx, (v) => (cfg.dangerFx = v));
+    toggle('危险选项倒计时', [[true, '开'], [false, '关']], () => cfg.dangerTimer !== false, (v) => { cfg.dangerTimer = v; if (!v) ctl.stopTimer(); });
     toggle('H 特效', [[true, '开'], [false, '关']], () => cfg.hfx !== false, (v) => { cfg.hfx = v; if (v) hfx.restore(vm.st); else hfx.clear(0); });
     g.append(el('label', null, '其他')); const row = el('div', 'row');
     if (document.fullscreenEnabled) { const f = el('button', 'btn', '全屏'); f.onclick = () => (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen().catch(() => {})); row.append(f); }
@@ -992,8 +1058,19 @@ const screens = {
     const cur = groups.includes(group) ? group : groups.includes(store.get('grp.recall')) ? store.get('grp.recall') : (groups.find((g) => all.some((x) => hGroup(x) === g && sys.recall[x.id])) ?? groups[0]);
     const tabs = groupTabs('recall', groups, cur, (g) => { this.close(); this.recall(fromEnd, g); });
     if (tabs) s.append(tabs);
-    for (const hb of all.filter((x) => groups.length <= 1 || hGroup(x) === cur)) {
+    const order = vm.recall().map((r) => P.hblocks[r.id]); // N-dz1：_90 特别回想排在同一女主 h02 之后
+    for (const hb of order.filter((x) => groups.length <= 1 || hGroup(x) === cur)) {
       const ok = !!sys.recall[hb.id];
+      if (hb.special === 'danger') {
+        // 特别回想卡：没解锁也列出；锁着时点了什么都不做
+        const b = el('button', `thumb special-danger${ok ? '' : ' locked'}`);
+        const fr = ok ? 'ui_recall_danger_frame' : 'ui_recall_danger_locked';
+        if (ok) { const tp = [`art/ui/thumb/thumb_${hb.id}.png`, `art/ui/thumb/thumb_${hb.cg}.png`].find(has); if (tp) b.append(img(tp, '')); else if (hb.cg) b.append(img(`art/cg/${hb.cg}.png`, hb.title)); }
+        if (skin(fr)) b.append(img(`art/ui/${fr}.png`, '', 'frame'));
+        b.append(el('div', 'cap', ok ? hb.title : '？？？'));
+        b.onclick = () => { if (!ok) return; audio.unlock(); audio.ui('confirm'); ctl.start(() => vm.startRecall(hb.id)); };
+        grid.append(b); continue;
+      }
       const b = el('button', `thumb${ok ? '' : ' locked'}`);
       if (ok) { const tp = [`art/ui/thumb/thumb_${hb.id}.png`, `art/ui/thumb/thumb_${hb.cg}.png`].find(has); b.append(tp ? img(tp, '') : img(`art/cg/${hb.cg}.png`, hb.title)); }
       b.append(el('div', 'cap', ok ? hb.title : '？？？'));

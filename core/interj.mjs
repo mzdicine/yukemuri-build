@@ -15,7 +15,7 @@ export function decideInterj(ev, ctx, cfg = DEFAULTS.interj) {
   if (ctx.skip) return { skip: 'skip' };
   if (!ctx.enabled) return { skip: 'off' };
   if (ev.inH && (!cfg.inH || !ctx.enabledH)) return { skip: 'offH' };
-  if (ev.danger && !cfg.inDanger) return { skip: 'danger' };
+  if (ev.danger && !ev.dzEvent && !cfg.inDanger && !(cfg.dangerOk || []).includes(ev.interj)) return { skip: 'danger' }; // N-dz1：随机事件正文里整条不生效 // @interj muffled 例外：危险中也照样播
   // 真语音存在才让位；无语音版（ctx.noVoice）一律当没有整句语音——是否配语气词只看下面的映射规则，「语音没加载」本身不是配的理由
   if (ev.voice && !ctx.noVoice && ctx.hasVoice?.(ev.voice)) return { skip: 'voice' };
   if (ev.interj === 'none') return { skip: 'none' };

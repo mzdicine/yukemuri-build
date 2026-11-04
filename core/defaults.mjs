@@ -21,7 +21,22 @@ export const DEFAULTS = {
       { min: 40, vignette: 0.45, bpm: 100, shake: 's', bgmDuck: 1 },
       { min: 80, vignette: 0.70, bpm: 140, shake: 's', bgmDuck: 0.2 },
     ],
-    kinds: { knock: 'se_knock', voice: 'se_husband_turn', phone: 'se_phone_vibe', snore: 'amb_nextdoor_snore' },
+    // kind → 引擎自动放的事件音。voice 留给固定段（隔墙翻身）；wall/msg/call/step/seek 是 N-dz1 新增（DANGER_SPEC §6.7⑤）
+    kinds: { knock: 'se_knock', voice: 'se_husband_turn', phone: 'se_phone_vibe', snore: 'amb_nextdoor_snore',
+      wall: 'se_wall_mumble', msg: 'se_msg_notify', call: 'se_corridor_call', step: 'se_footstep_outside', seek: 'se_changeroom_door' },
+    // 计量文案（#danger-label）：第 1 行 head，第 2 行按 kind（只在随机事件 / 只回想块里显示；固定段沿用旧逻辑不出文案）
+    labels: { head: '危险！', knock: '门外有动静……', phone: '手机在响……', msg: '手机在响……', voice: '隔壁有动静……', wall: '隔壁有动静……', snore: '隔壁有动静……',
+      call: '走廊有动静……', step: '走廊有动静……', seek: '走廊有动静……' },
+    defuseText: '今晚先到这里吧', // 满格化解 toast（池子上 toast= 可覆盖）。任何地方都不能出现「失败」「被发现」「Game Over」
+    // N-dz1 数值（DANGER_SPEC §4 / §5；§9 允许只调数值）
+    perLine: 2,          // 事件里每推进一句 +2（选 ① 之后不涨）
+    perSec: 3, secMax: 2, // 限时选项：第 1、2 秒满各 +3；第 3 秒满不加、直接判超时选 ①（最多 +6，§4.1 统筹 19:49）
+    endKeep: 0.4,        // @end_event：danger 降到 40%（向下取整）
+    full: 100,           // 满格（只在随机事件里触发）
+    capNoFull: 99,       // 不触发满格的上涨（按秒、只回想块）最多到 99
+    tiers: [40, 70, 85], // danger_peak ≥ 40/70/85 → tier 1/2/3
+    tierLust: [0, 2, 4, 6], tier3Aff: 2,
+    timer: { tickSe: 'se_countdown_tick', highlightMs: 300 }, // 限时选项：开始计时播一次 tick（3 秒整段）；超时先高亮 default 300ms 再选
     upSe: 'se_danger_up', clearSe: 'se_danger_clear', heartbeat: 'se_heartbeat_loop',
     // 心跳：AUDIO_SPEC 未单列阈值；按 STAGING §6（0–39 档即有 60bpm 慢心跳）= 危险事件进行中且 danger ≥ 1 就响，播放速率随档位
     heartbeatMin: 1,
@@ -89,7 +104,9 @@ export const DEFAULTS = {
     },
     // 只在 H 块内用的情绪（块外写 @interj moan → build 警告）。climax 不进 mapH，只由剧本手写 @interj climax 触发
     // 注意：@interj 情绪名不能含下划线（parser WORD_RE），所以是 moanhard 不是 moan_hard
-    hOnly: ['moan', 'moanhard', 'climax'],
+    // muffled（捂嘴闷声）也只在 H 里：只靠剧本手写 @interj muffled 触发，不进 mapH；危险中也照样播（DANGER_SPEC §6.7⑬）
+    hOnly: ['moan', 'moanhard', 'climax', 'muffled'],
+    dangerOk: ['muffled'], // 危险中照样播的情绪（inDanger=false 的例外）
     questionRe: /[？?]\s*$/,
     endsWithInterjRe: /(^|[。！？!?…—\s])[嗯唔呜啊哈呵哼诶欸哎唉嗐哦呃嘻嘿切]+[。！？!?～~…—\s]*$/,
     gain: 0.9, everyN: 1, minGapMs: 0, inDanger: false, inH: true, fadeOutMs: 60,

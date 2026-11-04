@@ -249,3 +249,16 @@ body[data-screen] #ui *, body[data-screen] #quick * { visibility: hidden !import
 .sprite > .cfx { position: absolute; inset: auto; height: auto; transform: translate(-50%, -50%); pointer-events: none; background-repeat: no-repeat; background-size: calc(var(--frames, 8) * 100%) 100%; background-position: 0 0; animation: cfx-play var(--fdur, 1500ms) steps(var(--frames, 8), jump-none) infinite; transition: opacity var(--dur, 200ms) ease; }
 @keyframes cfx-play { from { background-position: 0% 0; } to { background-position: 100% 0; } }
 @media (prefers-reduced-motion: reduce) { .sprite > .cfx { animation: none; background-position: 0 0; } }
+
+/* N-dz1 危险值玩法：事件提示 / 限时选项倒计时 / ③ hush / 特别回想卡（最小可用；正式样式见 UI_SPEC §14） */
+#danger-label { position: absolute; right: 120px; top: 28px; padding: 4px 14px; border-radius: 14px; background: rgba(58,36,20,.85); color: var(--paper); font: 18px var(--font-ui); opacity: 0; transition: opacity 300ms; pointer-events: none; white-space: nowrap; }
+#danger-label.on { opacity: 1; }
+.danger-timer { position: absolute; left: 50%; bottom: 300px; width: 560px; height: 20px; margin-left: -280px; border-radius: 10px; background: rgba(0,0,0,.45); overflow: hidden; pointer-events: none; }
+.danger-timer .fill { position: absolute; left: 0; top: 0; bottom: 0; width: 100%; background: var(--red); }
+.danger-timer.skinned { background: url(art/ui/ui_timer_bar_bg.webp) center/100% 100% no-repeat; }
+.danger-timer.skinned .fill { background: url(art/ui/ui_timer_bar_fill.webp) left/560px 100% no-repeat; }
+.danger-timer.skinned::after { content: ''; position: absolute; inset: -6px; background: url(art/ui/ui_timer_bar_glow.webp) center/100% 100% no-repeat; opacity: .6; }
+.choice.choice-hush::after { content: '…'; position: absolute; right: 18px; color: var(--pink); }
+.choice.choice-default.timeout { outline: 3px solid var(--pink); background-image: url(art/ui/ui_choice_p.webp); }
+.thumb.special-danger .frame { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; pointer-events: none; }
+.thumb.special-danger.locked { cursor: default; }

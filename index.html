@@ -10,8 +10,8 @@
 <title>湯けむり裏返し</title>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="style.css?v=0.1.0+202611041931.ae9e977a">
-<link rel="stylesheet" href="portrait.css?v=0.1.0+202611041931.ae9e977a">
+<link rel="stylesheet" href="style.css?v=0.1.0+202611042038.f4ef1e44">
+<link rel="stylesheet" href="portrait.css?v=0.1.0+202611042038.f4ef1e44">
 </head>
 <body>
 <div id="app">
@@ -27,6 +27,7 @@
     </div>
     <div id="hud"></div>
     <div id="danger-meter"><div class="fill"></div></div>
+    <div id="danger-label"></div>
     <div id="ui">
       <div id="textbox"></div>
       <div id="namebox"><span></span></div>
@@ -41,6 +42,7 @@
   <noscript>需要启用 JavaScript。</noscript>
 </div>
 <!-- 18+ 确认（E-agegate）：首次打开盖在最上层；选「是」记 localStorage 不再弹，选「否」跳 about:blank -->
+<style>#agegate[hidden]{display:none!important}</style>
 <div id="agegate" role="dialog" aria-modal="true" aria-labelledby="agegate-q" hidden style="position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;background:#1a120c;color:#f3e6d6;font:18px/1.7 system-ui,'PingFang SC','Noto Sans CJK SC',sans-serif;text-align:center;padding:24px">
   <div><p id="agegate-q" style="margin:0 0 28px">本作含成人内容，所有角色均为成年人。<br>你已满 18 岁吗？</p>
   <button id="agegate-yes" type="button" style="font:inherit;margin:6px 10px;padding:10px 28px;border-radius:8px;border:1px solid #d9a26b;background:#d9a26b;color:#1a120c;cursor:pointer">是，进入</button>
@@ -50,8 +52,8 @@
 (function () {
   var K = 'onsen_age18_ok', ok = false;
   try { ok = localStorage.getItem(K) === '1'; } catch (e) {}
-  if (ok) return;
-  var g = document.getElementById('agegate'); g.hidden = false;
+  var g = document.getElementById('agegate');
+  if (ok) { g.hidden = true; g.style.display = 'none'; return; } g.hidden = false;
   // 盖住期间：门外的点击/按键在捕获阶段拦掉；门内的事件不冒泡到引擎（免得 Enter/空格推进剧情）
   var block = function (e) { if (!g.hidden && !g.contains(e.target)) { e.stopImmediatePropagation(); e.preventDefault(); } };
   ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'click', 'touchstart', 'touchend', 'wheel', 'contextmenu', 'keydown', 'keyup'].forEach(function (t) {
@@ -63,6 +65,6 @@
   setTimeout(function () { document.getElementById('agegate-yes').focus(); }, 0);
 })();
 </script>
-<script type="module" src="main.js?v=0.1.0+202611041931.ae9e977a"></script>
+<script type="module" src="main.js?v=0.1.0+202611042038.f4ef1e44"></script>
 </body>
 </html>
