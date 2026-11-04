@@ -23,9 +23,10 @@ UI・演出　　【占位】
 音声素材：Re:I
 　素材制作者：夢前 黎（Rei Yumesaki）
 　URL：https://www.rei-yumesaki.net/
-音声素材：Pincree（https://pincree.jp/）
+音声素材：Pincree 音声素材_Pincree 音声_ピンクリー（https://pincree.jp/）
 　北上つばさ（CV：千夜）
 　宮咲ミヤ（CV：夢咲めぇ）
+　朝比奈ゆの（CV：来栖なむる）
 
 ― FONTS ―
 M PLUS Rounded 1c

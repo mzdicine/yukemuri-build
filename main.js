@@ -307,8 +307,18 @@ const view = {
       if (!e) { e = el('div', 'sprite'); e.style.opacity = 0; layer.append(e); this.chars.set(id, e); }
       if (e._key !== key) {
         const keep = [...e.querySelectorAll(':scope > .cfx')];
-        e._key = key; e.replaceChildren(img(p.body, `${id}_${ch.outfit}_${ch.expr}`)); if (p.acc && has(p.acc)) e.append(img(p.acc, ''));
-        e.append(...keep);
+        const na = p.acc && has(p.acc) ? img(p.acc, '', 'acc') : null;
+        if (!fresh && e._body === p.body) {
+          // 只换配饰（acc=）：新层叠在旧层上 0→1 淡入，完成后再删旧层；不做交叉淡化，镜框不会中途变半透（结衣 19:06）
+          const olds = [...e.querySelectorAll(':scope > .acc')], d = this.dur(c?.dur, 300);
+          if (na) { na.style.transition = `opacity ${d}ms ease`; na.style.opacity = 0; (keep[0] ? e.insertBefore(na, keep[0]) : e.append(na)); na.getBoundingClientRect(); na.style.opacity = 1; }
+          else for (const o of olds) { o.style.transition = `opacity ${d}ms ease`; o.style.opacity = 0; } // 摘掉配饰：旧层淡出
+          if (d) setTimeout(() => olds.forEach((o) => o.remove()), d); else olds.forEach((o) => o.remove());
+        } else {
+          e.replaceChildren(img(p.body, `${id}_${ch.outfit}_${ch.expr}`)); if (na) e.append(na);
+          e.append(...keep);
+        }
+        e._key = key; e._body = p.body;
         if (!has(p.body)) e.firstChild.textContent = `${P.chars[id]?.name || id}\n${ch.outfit}/${ch.expr}${ch.acc ? '/' + ch.acc : ''}`;
       }
       this.charFx(e, id, ch);

@@ -82,12 +82,14 @@ export const DEFAULTS = {
         realize: 'surprise', panic: 'surprise', peek: 'amae', dazed: 'think' },
     },
     mapH: { // H 块内覆盖（未列出的沿用 map）
-      hitozuma: { heated: 'moan', surrender: 'moan', dazed: 'moan', _default: 'moan', smile: 'breath', demure: 'breath' },
-      gal: { heated: 'moan', cling: 'moan', dazed: 'moan', _default: 'moan', smile: 'affirm' },
-      // 社长 H：捂住身体（cover/panic）= 暂停，不配 moan
-      bucho: { smile: 'amae', beam: 'affirm', cover: 'surprise', panic: 'surprise', peek: 'amae', heated: 'moan', dazed: 'moan', _default: 'moan' },
+      hitozuma: { heated: 'moanhard', surrender: 'moanhard', dazed: 'moan', _default: 'moan', smile: 'breath', demure: 'breath' },
+      gal: { heated: 'moanhard', cling: 'moan', dazed: 'moan', _default: 'moan', smile: 'affirm' },
+      // 社长 H：捂住身体、惊慌（cover/panic）的地方不配（千寻 19:22 H 三档清单）
+      bucho: { smile: 'amae', beam: 'affirm', cover: 'none', panic: 'none', peek: 'amae', heated: 'moanhard', dazed: 'moan', _default: 'moan' },
     },
-    hOnly: ['moan'], // 只在 H 块内用的情绪（块外写 @interj moan → build 警告）；以后加 moan_hard / climax 只改这里和映射即可（情绪名可含下划线）
+    // 只在 H 块内用的情绪（块外写 @interj moan → build 警告）。climax 不进 mapH，只由剧本手写 @interj climax 触发
+    // 注意：@interj 情绪名不能含下划线（parser WORD_RE），所以是 moanhard 不是 moan_hard
+    hOnly: ['moan', 'moanhard', 'climax'],
     questionRe: /[？?]\s*$/,
     endsWithInterjRe: /(^|[。！？!?…—\s])[嗯唔呜啊哈呵哼诶欸哎唉嗐哦呃嘻嘿切]+[。！？!?～~…—\s]*$/,
     gain: 0.9, everyN: 1, minGapMs: 0, inDanger: false, inH: true, fadeOutMs: 60,
