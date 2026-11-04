@@ -348,6 +348,7 @@ const view = {
     const v = st.vars.danger || 0, on = st.danger.active;
     const lv = [...DEFAULTS.danger.levels].reverse().find((l) => v >= l.min);
     const weak = cfg.dangerFx === 'weak';
+    applyDfx();
     $('#vignette').style.opacity = on ? lv.vignette * (weak ? 0.5 : 1) : 0;
     $('#danger-meter').classList.toggle('on', on);
     $('#danger-meter .fill').style.height = `${clamp(v, 0, 100) * 2.32}px`;
@@ -435,7 +436,8 @@ const view = {
       case 'shake': this.shake(c.level, c.dur, c.dir); break;
       case 'flash': this.flash(c.color, c.dur, c.count); break;
       case 'ui': this.applyUi(st); break;
-      case 'danger': this.applyDanger(st, !c.end); break;
+      // N-dz-ui2：c.up === false（下降）或 c.quiet（③ hush 分支的上涨）都不算 rising → 不震屏；SE 由引擎按同样规则发
+      case 'danger': this.applyDanger(st, !c.end && c.up !== false && !c.quiet); break;
       case 'hearts': case 'moan': hfx.onCmd(c); break;
       case 'bgm': case 'bgmstop': audio.nextFade = c.fade ?? null; break;
     }
@@ -470,31 +472,34 @@ const hud = {
   hideAll() { for (const e of Object.values(this.els)) e.g.style.display = 'none'; },
 };
 
-function toast(msg) { const t = el('div', null, msg); $('#toast').append(t); setTimeout(() => t.remove(), 2500); }
+function toast(msg, cls = null, ms = 2500) { const t = el('div', cls, msg); $('#toast').append(t); setTimeout(() => t.remove(), ms); return t; }
 
 // ---------------- VM ----------------
 const backlog = [];
 const vm = new VM(P, {
   system: sys,
   hooks: {
-    cmd: (c, m) => view.onCmd(c, m.st),
+    // N-dz-ui1：化解演出期间（ctl.dfz.freeze）引擎已经跳到化解标签，这期间的画面变化先不画，黑场时一次 view.full 补上
+    cmd: (c, m) => { if (ctl.dfz?.freeze) return; view.onCmd(c, m.st); },
     sfx: (s) => {
+      if (ctl.dfz?.freeze && s.kind !== 'voice') { ctl.dfz.q.push(() => audio.once(s.id, s.id.startsWith('amb_') ? 'amb' : 'se', s.vol ?? 1)); return; } // 化解音等黑场再放
       if (view.fast && s.kind !== 'voice') return;
       if (s.kind === 'voice') return; // 台词语音在 showText 里播（便于自动模式等待）
       audio.once(s.id, s.id.startsWith('amb_') ? 'amb' : 'se', s.vol ?? 1);
     },
     gauge: (k, o, n, silent, m, info) => {
+      if (ctl.dfz?.freeze) { if (k !== 'danger') ctl.dfz.q.push(() => hud.set(k, n, false)); return; }
       if (k !== 'danger') return hud.set(k, n, !silent && !view.fast);
       // N-dz1：按句 / 按秒 / 事件收尾的涨落只刷新计量，不播上升音、不震屏（事件登场和选项走 cmd → applyDanger）
       if (info && (info.reason === 'line' || info.reason === 'sec' || info.reason === 'end')) view.applyDanger(m.st, false);
     },
-    // N-dz1 满格化解：屏住呼吸 + 「今晚先到这里吧」；计量由引擎收起（化解音引擎只发一次）
-    defuse: (d) => { ctl.stopTimer(); if (audio.breath !== 0) audio.holdBreath(DEFAULTS.danger.holdBreathMs); toast(d.text || DEFAULTS.danger.defuseText); },
-    threshold: (k, t, m) => { if (!m.st.recall) { const v = P.vars[k]; toast(`${P.chars[v.chara]?.name || ''}${v.label} 达到 ${t}`); audio.once(DEFAULTS.unlockSe); } },
+    // N-dz1 满格化解（UI_SPEC §14.7）：这里只登记，演出（满格停 2s → 黑场 → 居中 toast → 化解标签）在 ctl.handle 里跑
+    defuse: (d) => ctl.beginDefuse(d),
+    threshold: (k, t, m) => { if (ctl.dfz?.freeze) { ctl.dfz.q.push(() => toast(`${P.chars[P.vars[k].chara]?.name || ''}${P.vars[k].label} 达到 ${t}`)); return; } if (!m.st.recall) { const v = P.vars[k]; toast(`${P.chars[v.chara]?.name || ''}${v.label} 达到 ${t}`); audio.once(DEFAULTS.unlockSe); } },
     unlock: (kind, id) => { saveSys(); if (kind === 'recall') toast(`回想解锁：${P.hblocks[id]?.title || id}`); },
     chose: (opt) => backlog.push({ choice: true, text: opt.text }),
     hEnter: () => {},
-    hExit: () => { hfx.stopHearts(0); hfx.clearMoans(); }, // 与自动停音同处：退出 H 块清空特效
+    hExit: () => { if (ctl.dfz?.freeze) { ctl.dfz.q.push(() => { hfx.stopHearts(0); hfx.clearMoans(); }); return; } hfx.stopHearts(0); hfx.clearMoans(); }, // 与自动停音同处：退出 H 块清空特效
     recallExit: () => hfx.clear(0),
     warn: (w) => console.warn(w),
   },
@@ -685,6 +690,7 @@ const ctl = {
   setAuto(on) { this.auto = on; qbtn('auto').classList.toggle('on', on); if (on) this.kick(); },
   kick() { if (this.ev && this.ev.type === 'text' && !this.typing) this.afterText(); },
   handle(ev) {
+    if (this.dfz?.freeze && !this.dfz.running) return this.runDefuse(ev);
     this.ev = ev; clearTimeout(this.waitTimer); clearTimeout(this.autoTimer);
     audio.sync(vm.st.audio);
     if (vm.st.scene?.code !== this.sceneCode) { this.sceneCode = vm.st.scene?.code; enterScene(this.sceneCode); }
@@ -694,7 +700,7 @@ const ctl = {
       case 'choice': return this.showChoice(ev);
       case 'wait': this.waitTimer = setTimeout(() => this.next(), this.skip ? 0 : ev.ms); return;
       case 'end': return this.ending(ev);
-      case 'recallEnd': return screens.recall(true);
+      case 'recallEnd': if (ev.msg) toast(ev.msg); return screens.recall(true); // ev.msg：debugEvent 满格化解但池子没有化解标签
     }
   },
   showText(ev) {
@@ -740,7 +746,7 @@ const ctl = {
     if (this.skip) this.setSkip(false);
     if (this.timer && this.timer.ev !== ev) this.stopTimer();
     autosave();
-    const box = $('#choices'); box.replaceChildren(); box.className = `on${ev.hstyle ? '' : ' dim'}`;
+    const box = $('#choices'); box.replaceChildren(); box.className = `on${ev.hstyle ? '' : ' dim'}${ev.timeout ? ' timed' : ''}`; // N-dz-ui3：限时选项一律 .timed（倒计时关掉也加）
     const R = choiceRects(L, ev.opts.length, ev.hstyle);
     ev.opts.forEach((o, k) => {
       const b = el('button', `choice${ev.hstyle ? ' h' : ''}${o.seen ? ' seen' : ''}`, o.text);
@@ -766,7 +772,7 @@ const ctl = {
     const step = (now) => {
       if (this.timer !== T) return;
       const pause = !!screens.open || document.hidden || this.ev !== ev;
-      if (pause !== T.paused) { T.paused = pause; this._tickSe(!pause); }
+      if (pause !== T.paused) { T.paused = pause; this._tickSe(!pause); $('#danger-timer')?.classList.toggle('paused', pause); }
       if (!pause && !T.locked) T.el += now - T.last;
       T.last = now;
       const secs = Math.floor(T.el / 1000), N = DEFAULTS.danger.secMax;
@@ -788,6 +794,9 @@ const ctl = {
     let bar = $('#danger-timer');
     if (!bar) { bar = el('div', 'danger-timer'); bar.id = 'danger-timer'; bar.append(el('div', 'fill')); if (skin('ui_timer_bar_bg')) bar.classList.add('skinned'); $('#choices').append(bar); }
     $('.fill', bar).style.width = `${Math.max(0, 1 - T.el / T.total) * 100}%`;
+    // N-dz-ui3：最后 1 秒 .last（闪），暂停中 .paused
+    bar.classList.toggle('last', T.total - T.el < DEFAULTS.danger.timer.lastMs && T.el < T.total);
+    bar.classList.toggle('paused', !!T.paused);
   },
   _tickSe(play, end = false) {
     const T = this.timer; if (!T || !audio.ctx) return;
@@ -800,12 +809,61 @@ const ctl = {
     cancelAnimationFrame(T.raf); this._tickSe(false, true); this.timer = null;
     $('#danger-timer')?.remove();
   },
+  // ---- N-dz-ui1 满格化解演出（UI_SPEC §14.7）----
+  // VM 在 _dzDefuse 里同步收计量、离开 H、跳到化解标签，并接着跑到下一句才返回；UI 这边：
+  // defuse hook → beginDefuse 冻结画面（cmd / sfx / gauge 暂不画）→ handle 收到下一句时 runDefuse：
+  // 满格停 holdMs（data-danger=hold）→ fadeMs 黑场 → 黑场上居中 .toast-defuse（淡入 / 停留 / 淡出）→ 撤黑幕、显示化解标签那句。
+  // 全程锁输入（click / next / 键盘 / 菜单）；快进（skip）或 view.fast 时直接走完。
+  dfz: null,
+  beginDefuse(d) {
+    this.stopTimer();
+    if (audio.breath !== 0) audio.holdBreath(DEFAULTS.danger.holdBreathMs);
+    this.dfz = { text: d.text || DEFAULTS.danger.defuseText, freeze: true, running: false, q: [], tid: 0 };
+  },
+  async runDefuse(ev) {
+    const Z = this.dfz; Z.running = true;
+    this.ev = null; clearTimeout(this.waitTimer); clearTimeout(this.autoTimer);
+    const F = DEFAULTS.danger.defuseFx, de = document.documentElement;
+    const fast = this.skip || view.fast;
+    const box = $('#choices'); box.className = ''; box.replaceChildren();
+    let black = $('#dz-black');
+    if (!black) { black = el('div'); black.id = 'dz-black'; black.setAttribute('aria-hidden', 'true'); $('#toast').before(black); }
+    Object.assign(black.style, { position: 'absolute', inset: '0', background: '#000', opacity: '0', pointerEvents: 'auto', transition: 'none', display: 'block' });
+    const wait = (ms) => new Promise((r) => { Z.tid = setTimeout(r, fast ? 0 : ms); });
+    const alive = () => this.dfz === Z;
+    if (!fast) {
+      de.dataset.danger = 'hold'; clearTimeout(view._holdT);
+      await wait(F.holdMs); if (!alive()) return;
+      black.style.transition = `opacity ${F.fadeMs}ms ease`; void black.offsetWidth; black.style.opacity = '1';
+      await wait(F.fadeMs); if (!alive()) return;
+    }
+    // 黑场下面：补上冻结期间的画面（计量收起、离开 H、化解标签开头的换景）和清音 / toast
+    Z.freeze = false;
+    view.full(vm.st); audio.sync(vm.st.audio);
+    for (const fn of Z.q.splice(0)) { try { fn(); } catch (e) { console.warn(e); } }
+    const tot = F.toastInMs + F.toastHoldMs + F.toastOutMs;
+    if (!fast) {
+      const t = toast(Z.text, 'toast-defuse', tot + 100);
+      await wait(tot); if (!alive()) return;
+      black.style.transition = `opacity ${F.fadeMs}ms ease`; black.style.opacity = '0';
+    } else toast(Z.text, 'toast-defuse', tot + 100);
+    this.endDefuse(true);
+    try { this.handle(ev); } catch (e) { this.crash(e); }
+  },
+  endDefuse(keepFade = false) {
+    const Z = this.dfz; if (Z) clearTimeout(Z.tid);
+    this.dfz = null;
+    const black = $('#dz-black'); if (!black) return;
+    black.style.pointerEvents = 'none';
+    if (!keepFade) { black.style.transition = 'none'; black.style.opacity = '0'; black.style.display = 'none'; }
+    else setTimeout(() => { if (!this.dfz) black.style.display = 'none'; }, DEFAULTS.danger.defuseFx.fadeMs);
+  },
   next() {
-    if (screens.open || !this.ev) return;
+    if (screens.open || !this.ev || this.dfz) return;
     if (this.ev.type === 'text' || this.ev.type === 'wait') { audio.stopInterj(); try { this.handle(vm.advance()); } catch (e) { this.crash(e); } }
   },
   click() {
-    if (this.mode !== 'game' || screens.open) return;
+    if (this.mode !== 'game' || screens.open || this.dfz) return; // 化解演出期间锁输入
     audio.unlock();
     if (this.userHide) { this.userHide = false; view.applyUi(vm.st); return; }
     if (this.skip) { this.setSkip(false); return; }
@@ -820,14 +878,14 @@ const ctl = {
   },
   crash(e) { console.error(e); toast(`脚本错误：${e.message}`); },
   start(fn) {
-    this.stopTimer();
+    this.stopTimer(); this.endDefuse();
     this.mode = 'game'; screens.closeAll(); view.clear(); backlog.length = 0; audio.stopInterj(); audio.stopVoice(); hud.build(); hud.hideAll();
     $('#text .body').textContent = ''; $('#namebox').classList.remove('on'); $('#choices').className = '';
     this.userHide = false; this.setAuto(false); this.setSkip(false);
     try { const ev = fn(); view.full(vm.st); this.handle(ev); } catch (e) { this.crash(e); }
   },
   toTitle() {
-    this.stopTimer();
+    this.stopTimer(); this.endDefuse();
     this.setAuto(false); this.setSkip(false); audio.stopVoice();
     vm.toTitle(); saveSys(); this.ev = null; this.mode = 'title'; view.clear();
     screens.title();
@@ -1203,12 +1261,18 @@ function relayout() {
   if (ctl.ev?.type === 'choice' && $('#choices').classList.contains('on')) ctl.showChoice(ctl.ev);
 }
 
+// N-dz-ui4：弱演出 → <html data-dfx="weak">（样式见 style.css 末尾 N-dz UI 补丁）。判断沿用 hfx.reduced()：设置「危险演出：减弱」或系统 prefers-reduced-motion
+function applyDfx() { const de = document.documentElement; if (hfx.reduced()) de.dataset.dfx = 'weak'; else delete de.dataset.dfx; }
+applyDfx();
+matchMedia('(prefers-reduced-motion: reduce)').addEventListener?.('change', applyDfx);
+
 // ---------------- 输入 ----------------
 stage.addEventListener('click', (e) => { if (e.target.closest('.qbtn, .choice, .screen, .viewer')) return; ctl.click(); });
-stage.addEventListener('contextmenu', (e) => { if (e.target.closest('.screen, .viewer')) return; e.preventDefault(); if (ctl.mode === 'game' && !screens.open) { ctl.userHide = !ctl.userHide; view.applyUi(vm.st); } });
-stage.addEventListener('wheel', (e) => { if (ctl.mode === 'game' && !screens.open && e.deltaY < 0) screens.backlog(); }, { passive: true });
+stage.addEventListener('contextmenu', (e) => { if (e.target.closest('.screen, .viewer')) return; e.preventDefault(); if (ctl.mode === 'game' && !screens.open && !ctl.dfz) { ctl.userHide = !ctl.userHide; view.applyUi(vm.st); } });
+stage.addEventListener('wheel', (e) => { if (ctl.mode === 'game' && !screens.open && !ctl.dfz && e.deltaY < 0) screens.backlog(); }, { passive: true });
 window.addEventListener('keydown', (e) => {
   if (ctl.mode !== 'game') return;
+  if (ctl.dfz) { e.preventDefault(); return; } // 化解演出期间锁输入
   if (e.key === 'Escape') { screens.open ? screens.close() : screens.config(); return; }
   if (screens.open) return;
   if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); ctl.click(); }

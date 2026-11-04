@@ -262,3 +262,83 @@ body[data-screen] #ui *, body[data-screen] #quick * { visibility: hidden !import
 .choice.choice-default.timeout { outline: 3px solid var(--pink); background-image: url(art/ui/ui_choice_p.webp); }
 .thumb.special-danger .frame { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; pointer-events: none; }
 .thumb.special-danger.locked { cursor: default; }
+
+/* ===== N-dz-ui4：以下原样贴自 n_ui2/danger/style_patch.css（结衣），不要在这里改，改动请回到补丁源 ===== */
+/* ===== N-dz2 危险值 UI 正式样式（UI·结衣，UI_SPEC §14 / STAGING §17）=====
+   用法：整段贴在 engine/web/style.css 末尾（在 portrait.css 之前加载即可；竖屏规则都带 html[data-layout=portrait]，优先级高于横屏）。
+   只用 CSS，不改 DOM；需要引擎配合的 3 个 class（.last / .toast-defuse / 心跳 --bpm 已有）见文末注释。素材均在 art/ui/。 */
+
+/* --- §14.4 计量：40/80 三段颜色（与竖屏红边同色阶）、按句 200ms 上涨、@end_event 先回落 600ms 再淡出 400ms --- */
+#danger-meter { transition: opacity 400ms ease 600ms; }            /* 关掉时：等回落完再淡出 */
+#danger-meter.on { transition: opacity 400ms ease; }                /* 打开时：立即淡入 */
+#danger-meter .fill { transition: height 200ms ease-out; }
+#danger-meter:not(.on) .fill { transition: height 600ms ease-out; }
+html[data-danger="0"] #danger-meter .fill { filter: saturate(.55) brightness(1.25); }   /* 0–39 ≈ rgb(214,96,104) */
+html[data-danger="1"] #danger-meter .fill { filter: none; }                              /* 40–79 ≈ rgb(196,40,50) */
+html[data-danger="2"] #danger-meter .fill, html[data-danger=hold] #danger-meter .fill { filter: brightness(.72) saturate(1.3); } /* 80+ ≈ rgb(150,8,20) */
+html[data-layout=portrait] #danger-meter .fill { transition: width 200ms ease-out; }
+html[data-layout=portrait] #danger-meter:not(.on) .fill { transition: width 600ms ease-out; }
+
+/* --- §14.4 #danger-label：两行，右对齐于 x=1088，图里不烘字（「危险！」走 ::before） --- */
+#danger-label { right: 192px; top: 28px; padding: 0; border-radius: 0; background: none; text-align: right; line-height: 1.25;
+  font: 22px var(--font-ui); color: #fff8ee; text-shadow: -2px 0 #3a2414, 2px 0 #3a2414, 0 -2px #3a2414, 0 2px #3a2414, 0 0 4px #3a2414; }
+#danger-label::before { content: '危险！'; display: block; font: 700 30px var(--font-ui); color: #ff6b72; }
+html[data-layout=portrait] #danger-label { left: 12px !important; right: auto; top: calc(var(--p-top) + var(--p-sh) + 12px) !important; font-size: 15px; text-align: left; line-height: 24px; }
+html[data-layout=portrait] #danger-label::before { display: inline; font-size: 15px; margin-right: 4px; }
+html[data-layout=portrait][data-danger] #hud { visibility: hidden; }   /* 危险期间 hud pop 让位 */
+
+/* --- §14.1 倒计时条：720×12，贴在第一个选项正上方 12px；收缩 + 随心跳脉冲 + 最后 1 秒光点 250ms 闪 --- */
+#choices .choice:first-of-type { anchor-name: --dz-first; }
+.danger-timer, .danger-timer.skinned { position: absolute; position-anchor: --dz-first; left: anchor(left); width: anchor-size(width); margin: 0;
+  bottom: calc(anchor(top) + 12px); top: auto; height: 12px; border-radius: 0; overflow: visible;
+  background: url(art/ui/ui_timer_bar_bg.webp) center/100% 100% no-repeat; }
+.danger-timer .fill, .danger-timer.skinned .fill { left: 2px; top: 2px; bottom: 2px; max-width: calc(100% - 4px);
+  background: url(art/ui/ui_timer_bar_fill.webp) left/716px 100% no-repeat; animation: dzpulse calc(60s / var(--bpm, 100)) ease-in-out infinite; }
+.danger-timer.skinned::after { content: none; }
+.danger-timer .fill::after { content: ''; position: absolute; right: -12px; top: 50%; width: 24px; height: 24px; margin-top: -12px;
+  background: url(art/ui/ui_timer_bar_glow.webp) center/contain no-repeat; animation: dzglow calc(60s / var(--bpm, 100)) ease-in-out infinite; }
+.danger-timer.last .fill::after { animation: dzblink 250ms steps(1) infinite; }
+@keyframes dzpulse { 0%, 100% { filter: brightness(1) } 50% { filter: brightness(1.35) } }
+@keyframes dzglow { 0%, 100% { transform: scale(1) } 50% { transform: scale(1.4) } }
+@keyframes dzblink { 0% { opacity: 1 } 50% { opacity: .15 } }
+.danger-timer.paused .fill, .danger-timer.paused .fill::after { animation-play-state: paused; }
+@media (prefers-reduced-motion: reduce) { .danger-timer .fill, .danger-timer .fill::after { animation: none !important; } }
+html[data-dfx=weak] .danger-timer .fill, html[data-dfx=weak] .danger-timer .fill::after { animation: none !important; }
+/* 竖屏：条在提问句与第一个选项之间（#choices 是 flex 列，用 order 提到最前），宽同按钮，高 8，上 14 / 下 10 */
+html[data-layout=portrait] .danger-timer { position: relative; position-anchor: none; left: auto; bottom: auto; width: 100%; height: 8px; flex: none; order: -1; margin: 2px 0 -2px; }
+html[data-layout=portrait] .danger-timer .fill { top: 1px; bottom: 1px; }
+html[data-layout=portrait] .danger-timer .fill::after { width: 16px; height: 16px; margin-top: -8px; right: -8px; }
+
+/* --- §14.1 超时：① 切 _p 态 + 2px 和纸白描边，保持 300ms --- */
+.choice.choice-default.timeout { background-image: url(art/ui/ui_choice_h_p.webp); outline: 2px solid #fff8ee; outline-offset: -2px; }
+
+/* --- §14.3 ③「看她——」：左侧 32×32 心形嘘图标 + 内侧 2px 危险红描边（不按文字匹配，只认 .choice-hush） --- */
+.choice.choice-hush { box-shadow: inset 0 0 0 2px #c0262d; padding-left: 56px; }
+.choice.choice-hush::after { content: ''; right: auto; left: 18px; top: 50%; width: 32px; height: 32px; margin-top: -16px;
+  background: url(art/ui/ui_choice_hush_icon.webp) center/contain no-repeat; }
+.choice.choice-hush.seen::before { left: auto; right: 18px; }
+html[data-layout=portrait] .choice.choice-hush { padding-left: 40px; }
+html[data-layout=portrait] .choice.choice-hush::after { left: 10px; width: 24px; height: 24px; margin-top: -12px; }
+
+/* --- §14.6 回想「最危险的那次」卡 --- */
+.thumb.special-danger .cap { color: #ff9aa4; }
+.thumb.special-danger.locked { background: #2a0f12; }
+.thumb.special-danger.locked .cap { top: 0; display: flex; align-items: center; justify-content: center; background: none; font: 34px var(--font-ui); color: #d6aa5a; letter-spacing: 4px; }
+.thumb.special-danger.locked:active { animation: dzlock 150ms; }
+@keyframes dzlock { 25% { transform: translateX(-3px) } 75% { transform: translateX(3px) } }
+html[data-layout=portrait] .thumb.special-danger.locked .cap { font-size: 24px; }
+
+/* --- §14.7 化解 toast（需要引擎给这条 toast 加 class toast-defuse） --- */
+#toast div.toast-defuse { width: 520px; height: 64px; box-sizing: border-box; padding: 0 24px; border: 0; border-radius: 0; display: flex; align-items: center; justify-content: center;
+  background: url(art/ui/ui_toast_bg.webp) center/100% 100% no-repeat; font-size: 20px; color: #fff8ee; animation: dztoast 2400ms forwards; }
+#toast:has(.toast-defuse) { top: 50%; margin-top: -32px; }
+@keyframes dztoast { 0% { opacity: 0 } 12.5%, 87.5% { opacity: 1 } 100% { opacity: 0 } }
+html[data-layout=portrait] #toast div.toast-defuse { width: calc(100vw - 48px); }
+
+/* 需要葵（main.js）配合：
+   1) 剩余 <1000ms 时给 #danger-timer 加 .last；暂停时加 .paused（停脉冲）。
+   2) 化解 toast：hold 2000ms → 600ms 黑场 → toast(text) 时给这一条 div 加 class 'toast-defuse'。
+   3) 危险演出=减弱时 document.documentElement.dataset.dfx='weak'（不脉冲不闪）。 */
+
+/* N-dz-ui3 补：竖屏关倒计时时，限时选项留出倒计时条的 20px，不跳位（引擎已给 #choices 加 .timed） */
+html[data-layout=portrait] #choices.timed:not(:has(#danger-timer)) .choice:first-of-type { margin-top: 20px; }

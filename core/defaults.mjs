@@ -36,11 +36,14 @@ export const DEFAULTS = {
     capNoFull: 99,       // 不触发满格的上涨（按秒、只回想块）最多到 99
     tiers: [40, 70, 85], // danger_peak ≥ 40/70/85 → tier 1/2/3
     tierLust: [0, 2, 4, 6], tier3Aff: 2,
-    timer: { tickSe: 'se_countdown_tick', highlightMs: 300 }, // 限时选项：开始计时播一次 tick（3 秒整段）；超时先高亮 default 300ms 再选
+    timer: { tickSe: 'se_countdown_tick', highlightMs: 300, lastMs: 1000 }, // 限时选项：开始计时播一次 tick（3 秒整段）；超时先高亮 default 300ms 再选；最后 lastMs 倒计时条加 .last
     upSe: 'se_danger_up', clearSe: 'se_danger_clear', heartbeat: 'se_heartbeat_loop',
     // 心跳：AUDIO_SPEC 未单列阈值；按 STAGING §6（0–39 档即有 60bpm 慢心跳）= 危险事件进行中且 danger ≥ 1 就响，播放速率随档位
     heartbeatMin: 1,
     holdBreathMs: 2000,
+    // N-dz-ui1 满格化解演出（UI_SPEC §14.7）：满格停 2000 → 600ms 黑场（同「跳过本段 H」）→ 黑场居中 toast 淡入 300 / 停 1800 / 淡出 300 → 化解标签
+    // toast 三段要和 style.css 里 .toast-defuse 的 dztoast 动画（2400ms）一致
+    defuseFx: { holdMs: 2000, fadeMs: 600, toastInMs: 300, toastHoldMs: 1800, toastOutMs: 300 },
   },
   hud: { popMs: 2000, popMsPortrait: 1500, levels: 5 }, // UI_SPEC §13.5：横屏 2000 / 竖屏 1500
   // H 高潮特效（STAGING §12）。坐标为逻辑 1280×720；特效一律 y ≤ maxY（文字框上沿以上）

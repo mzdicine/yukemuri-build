@@ -237,6 +237,8 @@ export class VM {
     this._hook('chose', opt, cmd, this);
     // N-dz1：限时选项选了 default（①）之后不再按句上涨；②③ 照涨
     if (cmd.timeout && st.dz) { const m = this._dzMode(cmd); if (m === 'event' || m === 'special') st.dz.held = i === cmd.def - 1; st.dz.ticks = 0; }
+    // N-dz-ui2：记下这次选的是不是 hush（③）。③ 分支里的 @danger 上涨不播 se_danger_up、不震屏（只有事件登场和选 ② 才有）
+    if (st.dz) { const m = this._dzMode(cmd); if (m === 'event' || m === 'special') st.dz.hush = !!opt.hush; }
     st.pc = opt.to; st.cur = null;
     return this.run();
   }
@@ -362,14 +364,25 @@ export class VM {
   // 满格（§6.2b）：屏住呼吸 → 收计量（化解音只播一次）→ 像跳过一样离开 H（不走 @h_end、不解锁回想）→ 按事件分流到化解标签
   _dzDefuse() {
     const st = this.st, run = st.dz, P = this.p.pools?.[run.pool];
-    const id = run.ev?.id;
+    const id = run.ev?.id, dbg = run.ev?.ret === -1; // dbg：debugEvent 单独跑的事件（没有 @danger_run 上下文）
     run.peak = Math.max(run.peak, DEFAULTS.danger.full);
     this._hook('defuse', { text: P?.toast || DEFAULTS.danger.defuseText, event: id, pool: run.pool, recall: !!run.recall }, this);
     this._dzMeterOff(true);
     st.vars.danger = 0;
-    run.ev = null; run.slots = {}; run.held = false; run.ticks = 0;
+    run.ev = null; run.slots = {}; run.held = false; run.ticks = 0; run.hush = false;
     st.cur = null;
     if (st.recall) return this._recallEnd();
+    if (dbg) {
+      // 调试入口（只影响 debugEvent，正式流程不走这里）：正式脚本里有这个池子的 @danger_run start defuse= 就跳到对应化解标签；没有就结束事件并提示
+      const rc = this.p.cmds.find((x) => x.op === 'dzrun' && x.mode === 'start' && x.pool === run.pool);
+      const lb0 = rc ? (rc.defuseTo?.[id] || rc.defuse) : null;
+      if (lb0 && this.p.labels[lb0] !== undefined) { run.defuse = rc.defuse; run.defuseTo = rc.defuseTo || null; }
+      else {
+        const msg = `调试事件 ${run.pool}/${id} 满格化解：这个池子没有化解标签，事件到此结束`;
+        this._hook('warn', msg, this);
+        return { type: 'recallEnd', id: '__dz_event', defused: true, msg };
+      }
+    }
     run.defused = true;
     st.vars.danger_peak = run.peak; st.vars.danger_defused = 1;
     if (P?.dzlust) st.vars[P.dzlust] = 0;
@@ -442,6 +455,7 @@ export class VM {
     const f = run?.ev;
     if (!f || f.key !== `${c.pool}:${c.id}` || f.entered) { st.pc = c.endAt + 1; return null; } // 顺序执行掉进事件块：整块跳过
     f.entered = true;
+    run.hush = false;
     f.cg = st.cg ? { id: st.cg.id, diff: st.cg.diff, layers: [...st.cg.layers] } : null; // diff=prev 用（含叠加层）
     run.held = false;
     const old = Number(st.vars.danger || 0);
@@ -452,7 +466,7 @@ export class VM {
     if (nv > old) this._hook('sfx', { kind: 'se', id: D.upSe, engine: true }, this);
     const full = this._dzAdd(c.add, 'event');
     if (st.vars.danger >= D.heartbeatMin) st.audio.loops[D.heartbeat] = 1;
-    this._hook('cmd', { op: 'danger', mode: '+', n: c.add, kind: c.kind, se: c.se, dz: 'event', src: c.src }, this);
+    this._hook('cmd', { op: 'danger', mode: '+', n: c.add, kind: c.kind, se: c.se, dz: 'event', src: c.src, up: nv > old, quiet: false }, this);
     if (full) return this._dzDefuse() || 'cont';
     return null;
   }
@@ -467,7 +481,7 @@ export class VM {
     st.vars.danger = nv;
     this._dzGauge(old, nv, 'end');
     this._dzMeterOff(true);
-    run.ev = null; run.held = false; run.ticks = 0;
+    run.ev = null; run.held = false; run.ticks = 0; run.hush = false;
     if (f.ret === -1) return { type: 'recallEnd', id: '__dz_event' }; // debugEvent
     st.pc = f.ret;
     return null;
@@ -497,7 +511,7 @@ export class VM {
       st.vars.danger = nv;
       if (old !== nv) this._dzGauge(old, nv, 'end');
       this._dzMeterOff(true);
-      st.dz.held = false; st.dz.ticks = 0;
+      st.dz.held = false; st.dz.ticks = 0; st.dz.hush = false;
       return null;
     }
     const old = Number(st.vars.danger || 0);
@@ -507,9 +521,11 @@ export class VM {
     if (evSe) this._hook('sfx', { kind: 'se', id: evSe, event: c.kind || 'custom' }, this);
     const target = c.mode === '+' ? old + c.n : c.mode === '-' ? old - c.n : c.n;
     const full = this._dzAdd(target - old, m === 'special' && !c.kind ? 'choice' : m === 'special' ? 'event' : 'choice', { cap: m === 'special' ? D.capNoFull : D.full });
-    if (st.vars.danger > old) this._hook('sfx', { kind: 'se', id: D.upSe, engine: true }, this);
+    const up = st.vars.danger > old, quiet = !c.kind && !!st.dz.hush; // quiet：③（hush）分支里的上涨
+    if (up && !quiet) this._hook('sfx', { kind: 'se', id: D.upSe, engine: true }, this);
     if (st.vars.danger >= D.heartbeatMin) st.audio.loops[D.heartbeat] = 1; else delete st.audio.loops[D.heartbeat];
-    this._hook('cmd', c, this);
+    // UI 按 up / quiet 决定震不震：只有真的上涨、且不是 ③ 分支时才震（@danger -25 这类下降也不震）
+    this._hook('cmd', { ...c, up, quiet }, this);
     if (full) return this._dzDefuse() || 'cont';
     return null;
   }
