@@ -1,0 +1,13 @@
+{
+  "name": "湯けむり裏返し",
+  "short_name": "湯けむり裏返し",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#1a120c",
+  "theme_color": "#1a120c",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

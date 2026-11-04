@@ -1,0 +1,120 @@
+/* 竖屏 / 防偷窥模式（BOARD E6，UI_SPEC §13）。开关：html[data-layout=portrait]（core/orient.mjs 写入）。
+   只有图像层 #stage-img（=§13.8 的 .stage）按 16:9 等比缩小、贴顶部安全区下沿、亮度 var(--portrait-dim)；
+   文字与 UI 不缩放（固定 CSS px）、放在下方、亮度正常。尺寸变量由 main.js relayout() 按 core/layout.mjs portraitLayout() 写入：
+   --p-top（safe-top）、--p-sh（stage 高）、--p-scale（vw/1280）、--p-bot（safe-bottom）。 */
+:root { --portrait-dim: 0.3; --p-top: 0px; --p-sh: 219px; --p-scale: .3047; --p-bot: 0px; }
+html[data-layout=portrait] #stage { transform: none !important; width: 100vw; height: 100vh; background: #1a120c;
+  background-image: repeating-linear-gradient(90deg, rgba(255,255,255,.015) 0 2px, transparent 2px 9px); }
+html[data-layout=portrait] #stage-img { inset: auto; left: 0; top: var(--p-top); width: 1280px; height: 720px; transform: scale(var(--p-scale)); transform-origin: 0 0;
+  overflow: hidden; background: #000; filter: brightness(var(--portrait-dim)); }
+html[data-layout=portrait] #rotate { display: none !important; }
+
+/* HUD 条：stage 下方，高 48；左 好感/欲望图标 32（热区 48），右 危险值横条 160×16 */
+html[data-layout=portrait] #hud { left: 12px !important; top: calc(var(--p-top) + var(--p-sh)) !important; height: 48px; flex-direction: row; gap: 4px; align-items: center; }
+html[data-layout=portrait] .gauge { height: 48px; gap: 4px; }
+html[data-layout=portrait] .gauge .ico { width: 32px; height: 32px; font-size: 18px; box-shadow: 0 0 0 8px transparent; margin: 8px; pointer-events: auto; }
+html[data-layout=portrait] .gauge .bar { width: 0; height: 12px; transition: width 300ms, opacity 300ms; }
+html[data-layout=portrait] .gauge.open .bar { width: 72px; }
+html[data-layout=portrait] .gauge .lv { display: none; }
+html[data-layout=portrait] #danger-meter { right: 12px !important; left: auto; top: calc(var(--p-top) + var(--p-sh) + 16px) !important; width: 160px; height: 16px; border-width: 1px; border-radius: 3px; }
+html[data-layout=portrait] #danger-meter .fill { left: 2px; top: 2px; bottom: 2px; right: auto; height: auto !important; width: calc((160px - 6px) * var(--dv, 0) / 100); transition: width 500ms;
+  background: var(--red); }
+html[data-layout=portrait] #danger-meter.on { animation: dmpulse calc(60s / var(--bpm, 80)) ease-in-out infinite; }
+@keyframes dmpulse { 50% { box-shadow: 0 0 10px 2px rgba(192,38,45,.9); } }
+
+/* 文字面板：HUD 下到快捷栏上；名字 18px 粗体粉色下划线，正文 17px 行距 1.6 */
+html[data-layout=portrait] #textbox { left: 0 !important; width: 100vw !important; top: calc(var(--p-top) + var(--p-sh) + 48px) !important;
+  height: auto !important; bottom: calc(56px + var(--p-bot)); border-top: 1px solid var(--pink); background: rgba(40,26,16,.96) !important; opacity: 1; border-radius: 0; }
+html[data-layout=portrait] #namebox { left: 16px !important; top: calc(var(--p-top) + var(--p-sh) + 48px + 12px) !important; width: auto !important; height: 28px !important;
+  background: none !important; border-radius: 0; font: 700 18px/26px var(--font-ui); justify-content: flex-start; border-bottom: 2px solid var(--pink); padding: 0 2px; pointer-events: none; }
+html[data-layout=portrait] #text { left: 16px !important; width: calc(100vw - 32px) !important; top: calc(var(--p-top) + var(--p-sh) + 48px + 48px) !important;
+  height: auto !important; bottom: calc(56px + var(--p-bot) + 16px); font: 17px/1.6 var(--font-body); pointer-events: none;
+  text-shadow: none; }
+html[data-layout=portrait] #text .next { position: absolute; right: 0; bottom: 0; }
+/* 危险值演出搬到 UI 层：文字面板外框红色描边呼吸，随档位加深；屏息时停在最红 */
+html[data-layout=portrait][data-danger] #textbox { outline: 3px solid rgba(192,38,45,var(--dlv-a, .4)); outline-offset: -3px; animation: dbreath calc(60s / var(--bpm, 80)) ease-in-out infinite; }
+html[data-layout=portrait][data-danger=hold] #textbox { animation: none; outline-color: rgb(220,30,40); outline-width: 4px; }
+@keyframes dbreath { 50% { outline-color: rgba(192,38,45,.15); } }
+html[data-layout=portrait] #vignette { display: none; }
+
+/* 快捷栏：底部，高 56 + safe-bottom；7 个等分（<352 宽 5 个：快进/自动/Backlog/存档/菜单） */
+html[data-layout=portrait] #quick { inset: auto 0 0 0; height: calc(56px + var(--p-bot)); padding-bottom: var(--p-bot); display: flex; pointer-events: auto; background: #1a120c; border-top: 1px solid rgba(242,167,184,.3); }
+html[data-layout=portrait] .qbtn { position: static !important; flex: 1 1 0; width: auto !important; height: 56px !important; min-width: 44px; border-radius: 0; box-shadow: none;
+  background-size: 32px 32px !important; background-position: center !important; background-color: transparent !important; font-size: 13px; }
+html[data-layout=portrait][data-narrow] .qbtn[data-q=load], html[data-layout=portrait][data-narrow] .qbtn[data-q=hide] { display: none; }
+
+/* 选项 / H 中途选项：放进文字面板，纵向，宽 = 面板宽 − 32，高 56，间距 12，字号 17；超过 4 个滚动 */
+html[data-layout=portrait] #choices.on { display: flex; flex-direction: column; gap: 12px; position: absolute; inset: auto 0 auto 0; top: calc(var(--p-top) + var(--p-sh) + 48px);
+  bottom: calc(56px + var(--p-bot)); padding: 16px; overflow-y: auto; background: rgba(40,26,16,.98); z-index: 2; }
+html[data-layout=portrait] #choices.dim { background: rgba(40,26,16,.98); }
+html[data-layout=portrait] .choice { position: relative !important; left: auto !important; top: auto !important; width: 100% !important; height: 56px !important; flex: none; font-size: 17px; }
+html[data-layout=portrait] .choice.seen::before { left: 8px; }
+
+/* 全屏菜单：UI 层、正常亮度、纵向单列；图像（缩略图、CG）用 --portrait-dim */
+html[data-layout=portrait] #screens > .screen { inset: 0; padding-top: var(--p-top); padding-bottom: var(--p-bot); }
+html[data-layout=portrait] .screen h2 { margin: 12px 12px 8px; font-size: 22px; }
+html[data-layout=portrait] .screen .close { right: 12px; top: calc(var(--p-top) + 4px); }
+html[data-layout=portrait] .btn { font-size: 16px; min-width: 44px; min-height: 44px; padding: 0 12px; }
+html[data-layout=portrait] .tabs { padding: 0 12px; gap: 6px; }
+html[data-layout=portrait] .grid { padding: 8px 12px; gap: 12px; grid-template-columns: 1fr !important; align-content: start; }
+html[data-layout=portrait] .slot { min-height: 88px; height: 88px; padding: 8px; font-size: 13px; }
+html[data-layout=portrait] .slot img, html[data-layout=portrait] .slot .thumbph { width: 128px; height: 72px; }
+html[data-layout=portrait] .slot .meta b { font-size: 15px; }
+html[data-layout=portrait] .grid.thumbs { grid-template-columns: 1fr 1fr !important; }
+html[data-layout=portrait] .grid .thumb { width: 100%; height: auto; aspect-ratio: 16 / 9; }
+html[data-layout=portrait] .log { padding: 8px 12px 16px; }
+html[data-layout=portrait] .log .row { font-size: 17px; }
+html[data-layout=portrait] .log .row .n { width: 72px; }
+html[data-layout=portrait] .cfg { padding: 8px 12px 16px; grid-template-columns: 1fr; gap: 6px; font-size: 16px; }
+html[data-layout=portrait] #screens img, html[data-layout=portrait] #screens .ph { filter: brightness(var(--portrait-dim)); }
+html[data-layout=portrait] #screens .logo img { filter: none; }
+html[data-layout=portrait] #screens .fit { left: 0; top: var(--p-top); width: 100vw; height: var(--p-sh); object-fit: contain; }
+html[data-layout=portrait] .title .logo { left: 12px; top: calc(var(--p-top) + var(--p-sh) + 16px); width: auto; height: var(--p-logo-h); font-size: min(40px, calc((100vw - 24px) * .1)); }
+html[data-layout=portrait] .title .menu { left: 12px; right: 12px; bottom: calc(var(--p-bot) + 40px); display: flex; flex-direction: column; gap: 12px; }
+html[data-layout=portrait] .title .menu .btn { position: static !important; width: 100%; height: 56px !important; font-size: 17px; }
+html[data-layout=portrait] .viewer .hint { left: 12px; right: 12px; top: calc(var(--p-top) + var(--p-sh) + 64px); bottom: auto; font-size: 15px; }
+html[data-layout=portrait] .viewer .close { right: 12px !important; top: calc(var(--p-top) + var(--p-sh) + 8px) !important; }
+html[data-layout=portrait] #toast { top: calc(var(--p-top) + var(--p-sh) + 56px); }
+html[data-layout=portrait] #toast div { font-size: 15px; }
+html[data-layout=portrait] .title .logo.framed { right: 12px; height: calc((100vw - 24px) * 200 / 640); max-height: 110px; justify-content: center; }
+/* 标题页：logo → 菜单（可滚动，按钮 44–56px）→ 版本号，三者不重叠，都在安全区内 */
+html[data-layout=portrait] { --p-logo-h: min(calc((100vw - 24px) * 200 / 640), 110px); }
+html[data-layout=portrait] .title .logo.framed { height: var(--p-logo-h); }
+html[data-layout=portrait] .title .menu { top: calc(var(--p-top) + var(--p-sh) + 28px + var(--p-logo-h)); bottom: calc(var(--p-bot) + 32px); gap: 8px; overflow-y: auto; overscroll-behavior: contain; }
+html[data-layout=portrait] .title .menu .btn { flex: 0 1 56px; min-height: 44px; height: auto !important; }
+html[data-layout=portrait] .title .menu .btn:first-child { margin-top: auto; }
+html[data-layout=portrait] .title .ver { left: 12px; right: 12px; bottom: calc(var(--p-bot) + 6px); font-size: 12px; line-height: 20px; height: 20px; text-align: center; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+/* 竖屏矮屏（高 <640）：按钮 48、间距 8，一屏放下不滚动；标题框压缩并上移叠在标题图下沿 */
+@media (max-height: 639px) {
+  html[data-layout=portrait] { --p-logo-h: 80px; }
+  html[data-layout=portrait] .title .menu { top: auto; bottom: calc(var(--p-bot) + 30px); height: calc(48px * 6 + 8px * 5); gap: 8px; overflow: hidden; }
+  html[data-layout=portrait] .title .menu .btn { flex: 0 0 48px; height: 48px !important; min-height: 48px; margin-top: 0 !important; }
+  html[data-layout=portrait] .title .logo, html[data-layout=portrait] .title .logo.framed { top: auto; bottom: calc(var(--p-bot) + 30px + 48px * 6 + 8px * 5 + 8px); left: 50%; right: auto; width: calc(var(--p-logo-h) * 640 / 200); transform: translateX(-50%); font-size: 26px; max-height: none; }
+  html[data-layout=portrait] .title .ver { bottom: calc(var(--p-bot) + 4px); }
+}
+/* §13.5 危险值 UI 层：描边颜色随档位加深，屏息停在最红 */
+html[data-layout=portrait][data-danger="0"] { --dlv-c: rgb(214, 96, 104); }
+html[data-layout=portrait][data-danger="1"] { --dlv-c: rgb(196, 40, 50); }
+html[data-layout=portrait][data-danger="2"] { --dlv-c: rgb(150, 8, 20); }
+html[data-layout=portrait][data-danger=hold] { --dlv-c: rgb(150, 8, 20); }
+html[data-layout=portrait][data-danger] #textbox { outline-color: var(--dlv-c); }
+html[data-layout=portrait][data-danger=hold] #textbox { outline-color: var(--dlv-c) !important; outline-width: 4px; animation: none !important; }
+@keyframes dbreath { 50% { outline-color: color-mix(in srgb, var(--dlv-c, rgb(192,38,45)) 25%, transparent); } }
+@media (prefers-reduced-motion: reduce) {
+  html[data-layout=portrait] #danger-meter.on { animation: none; box-shadow: 0 0 8px 1px rgba(192,38,45,.8); }
+  html[data-layout=portrait][data-danger] #textbox { animation: none; }
+}
+/* 路线选择 / 分组 tab：竖屏单列、热区 ≥44px（§13） */
+html[data-layout=portrait] .route-grid { grid-template-columns: 1fr !important; align-content: start; }
+html[data-layout=portrait] .thumb.route { width: 100%; height: auto; aspect-ratio: 16 / 9; }
+html[data-layout=portrait] .tabs.groups .btn { min-height: 44px; font-size: 16px; flex: 1 1 0; }
+html[data-layout=portrait] #screens .thumb.locked .ph { filter: grayscale(1) brightness(calc(var(--portrait-dim) * .5)); }
+/* 结衣试验：竖屏标题 bg+人物同锚点放大 2×（脸 x400 居中），人物不压暗，bg 0.55，裁在 stage 区内 */
+html[data-layout=portrait] #screens .title img.fit { width: calc(var(--p-sh) * 2 * 1280 / 720); height: calc(var(--p-sh) * 2); left: calc(50vw - var(--p-sh) * 2 * 400 / 720); top: calc(var(--p-top) - var(--p-sh) * 0.04); object-fit: fill; clip-path: inset(calc(var(--p-sh) * 0.04) 0 calc(var(--p-sh) * 0.96) 0); filter: brightness(.55); }
+html[data-layout=portrait] #screens .title img.fit.chara { filter: none; }
+/* 路线卡竖屏（结衣核对 2026-11-04）：路线卡不涉及 H 内容，不压暗；锁/说明条/占位标题随卡缩小 */
+html[data-layout=portrait] #screens .thumb.route img, html[data-layout=portrait] #screens .thumb.route .ph { filter: none; }
+html[data-layout=portrait] #screens .thumb.route.locked img, html[data-layout=portrait] #screens .thumb.route.locked .ph { filter: grayscale(1) brightness(.5); }
+html[data-layout=portrait] .thumb.route .lock { font-size: 18px; padding: 4px 6px; }
+html[data-layout=portrait] .thumb.route .cap { font-size: 14px; padding: 4px 8px; }
+html[data-layout=portrait] .thumb.route .ph { font-size: 14px; padding: 4px 30px 26px; }
